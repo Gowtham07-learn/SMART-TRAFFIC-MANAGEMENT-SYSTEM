@@ -1,0 +1,15 @@
+# Smart Traffic Management MVP Dependencies
+# As this is a Node.js project, dependencies are natively managed in package.json and installed via `npm install`.
+# Included here for flat reference:
+
+react
+react-dom
+react-router-dom
+lucide-react
+recharts
+react-leaflet
+leaflet
+framer-motion
+tailwindcss
+clsx
+tailwind-merge
