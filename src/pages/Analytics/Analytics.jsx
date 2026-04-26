@@ -1,10 +1,26 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, Filter, FileJson, FileText, Table as TableIcon } from 'lucide-react';
 import { TrafficLineChart } from '../../components/charts/TrafficLineChart';
 import { MOCK_CHART_DATA } from '../../data/mockData';
 import { cn } from '../../utils/cn';
 
 const Analytics = () => {
+    const [co2Data, setCO2Data] = useState(null);
+
+    useEffect(() => {
+        const fetchCO2 = async () => {
+            const token = sessionStorage.getItem('access_token');
+            const res = await fetch('http://localhost:8000/analytics/co2', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const data = await res.json();
+            if (data.success) {
+                setCO2Data(data.data);
+            }
+        };
+        fetchCO2();
+    }, []);
+
     const reports = [
         { title: 'Monthly Congestion Report', date: 'Mar 1, 2026', type: 'PDF', size: '2.4 MB' },
         { title: 'Environmental Impact Study', date: 'Feb 28, 2026', type: 'CSV', size: '1.2 MB' },
@@ -18,6 +34,11 @@ const Analytics = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-slate-100">Analytics & Reports</h2>
                     <p className="text-slate-400">Deep dive into historical traffic data and trends</p>
+                    {co2Data && (
+                        <p className="text-xs text-blue-300 mt-2">
+                            City CO2: {co2Data.city_total_co2_tons} tons | Annual projected: {co2Data.annual_projected_tons} tons
+                        </p>
+                    )}
                 </div>
                 <div className="flex space-x-3">
                     <button className="bg-slate-800 hover:bg-slate-700 text-slate-100 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">

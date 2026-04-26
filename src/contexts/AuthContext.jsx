@@ -9,22 +9,13 @@ export const ROLES = {
     CITIZEN: 'CITIZEN'
 };
 
-const VALID_EMAILS = {
-    [ROLES.ADMIN]: 'admin@gmail.com',
-    [ROLES.TRAFFIC_CONTROLLER]: 'trafic@gmail.com',
-    [ROLES.EMERGENCY_DRIVER]: 'driver@gmail.com',
-    [ROLES.CITIZEN]: 'person@gmail.com'
-};
-
-const VALID_PASSWORD = 'test1234';
-
 export const hasAccess = (role, allowedRoles) => {
     return allowedRoles.includes(role);
 };
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(() => {
-        const storedUser = localStorage.getItem('user');
+        const storedUser = sessionStorage.getItem('user');
         if (storedUser) {
             try {
                 return JSON.parse(storedUser);
@@ -35,32 +26,31 @@ export const AuthProvider = ({ children }) => {
         return null; // Enforce missing user
     });
 
-    const login = (email, password, role) => {
-        // Step 1: Check email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            return { success: false, error: 'Invalid email format' };
+    const login = async (email, password) => {
+        try {
+            const response = await fetch('http://localhost:8000/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
+            const data = await response.json();
+            if (!data.success) {
+                return { success: false, error: data.error || 'Login failed' };
+            }
+            sessionStorage.setItem('access_token', data.data.access_token);
+            sessionStorage.setItem('refresh_token', data.data.refresh_token);
+            sessionStorage.setItem('user', JSON.stringify(data.data.user));
+            setUser(data.data.user);
+            return { success: true };
+        } catch (e) {
+            return { success: false, error: e.message || 'Network error' };
         }
-
-        // Step 2: Check password
-        if (password.length < 8 || password !== VALID_PASSWORD) {
-            return { success: false, error: 'Wrong password. Try again' };
-        }
-
-        // Step 3: Match role + email
-        if (VALID_EMAILS[role] !== email) {
-            return { success: false, error: 'Access denied for this role' };
-        }
-
-        // Success Case
-        const newUser = { email, role };
-        localStorage.setItem('user', JSON.stringify(newUser));
-        setUser(newUser);
-        return { success: true };
     };
 
     const logout = () => {
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
         setUser(null);
     };
 

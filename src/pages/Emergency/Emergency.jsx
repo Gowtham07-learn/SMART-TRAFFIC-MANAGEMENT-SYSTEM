@@ -1,12 +1,57 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Ambulance, MapPin, Navigation, ShieldCheck, Timer } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const EmergencyPriority = () => {
-    const activeCorridors = [
-        { id: 'ec1', vehicle: 'AMB-204', destination: 'City General Hospital', eta: '4 min', status: 'active', junctions: 4, progress: 65 },
-        { id: 'ec2', vehicle: 'FIRE-09', destination: 'Industrial Zone A', eta: '8 min', status: 'clearing', junctions: 7, progress: 30 },
-    ];
+    const [activeCorridors, setActiveCorridors] = useState([]);
+
+    const fetchActive = async () => {
+        const token = sessionStorage.getItem('access_token');
+        const res = await fetch('http://localhost:8000/emergency/active', {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+            setActiveCorridors(
+                data.data.map((c) => ({
+                    id: c.id,
+                    vehicle: 'EMERGENCY',
+                    destination: 'Priority Route',
+                    eta: 'Live',
+                    progress: 50,
+                    junctions: c.corridor_junction_ids?.length || 0,
+                }))
+            );
+        }
+    };
+
+    const activateEmergency = async () => {
+        const token = sessionStorage.getItem('access_token');
+        const junctionRes = await fetch('http://localhost:8000/junctions', {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        const junctionData = await junctionRes.json();
+        const firstJunction = junctionData?.data?.[0];
+        if (!firstJunction) return;
+        const res = await fetch('http://localhost:8000/emergency/activate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                junction_id: firstJunction.id,
+                heading_degrees: 90,
+                vehicle_type: 'AMBULANCE',
+            }),
+        });
+        await res.json();
+        fetchActive();
+    };
+
+    useEffect(() => {
+        fetchActive();
+    }, []);
 
     return (
         <div className="space-y-6">
@@ -16,7 +61,7 @@ const EmergencyPriority = () => {
                     <p className="text-slate-400">Green corridor management and live vehicle tracking</p>
                 </div>
                 <div className="flex space-x-3">
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
+                    <button onClick={activateEmergency} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center">
                         <Ambulance size={18} className="mr-2" />
                         DISPATCH NEW CORRIDOR
                     </button>

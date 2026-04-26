@@ -1,56 +1,58 @@
 import { useState, useEffect } from 'react';
-import { MOCK_JUNCTIONS, MOCK_STATS } from '../data/mockData';
+import { MOCK_STATS } from '../data/mockData';
 
 export const useTrafficSimulation = () => {
-    const [junctions, setJunctions] = useState(MOCK_JUNCTIONS);
+    const [junctions, setJunctions] = useState([]);
     const [stats, setStats] = useState(MOCK_STATS);
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            // Simulate signal timing countdowns
-            setJunctions(prev => prev.map(j => {
-                let newTime = j.timeRemaining - 1;
-                let newSignal = j.signal;
+        const token = sessionStorage.getItem('access_token');
+        const ws = new WebSocket(`ws://localhost:8000/ws/traffic?token=${token}`);
 
-                if (newTime <= 0) {
-                    if (j.signal === 'Red') {
-                        newSignal = 'Green';
-                        newTime = 45;
-                    } else if (j.signal === 'Green') {
-                        newSignal = 'Yellow';
-                        newTime = 5;
-                    } else {
-                        newSignal = 'Red';
-                        newTime = 30;
-                    }
-                }
-
-                // Simulate small vehicle count changes
-                const vehicleDelta = Math.floor(Math.random() * 5) - 2;
-                const newVehicles = Math.max(0, j.vehicles + vehicleDelta);
-
+        ws.onmessage = (event) => {
+            const payload = JSON.parse(event.data);
+            if (payload.type !== 'TRAFFIC_UPDATE') return;
+            const mapped = (payload.junctions || []).map((j) => {
+                const total = (j.vehicle_count_ns || 0) + (j.vehicle_count_ew || 0);
                 return {
-                    ...j,
-                    signal: newSignal,
-                    timeRemaining: newTime,
-                    vehicles: newVehicles,
-                    status: newVehicles > 40 ? 'congested' : newVehicles > 20 ? 'moderate' : 'smooth'
+                    id: j.id,
+                    name: j.name,
+                    coords: [j.latitude, j.longitude],
+                    status:
+                        j.congestion_level === 'CRITICAL' || j.congestion_level === 'HIGH'
+                            ? 'congested'
+                            : j.congestion_level === 'MEDIUM'
+                            ? 'moderate'
+                            : 'smooth',
+                    vehicles: total,
+                    speed: 30,
+                    signal: j.current_phase || 'NS_GREEN',
+                    timeRemaining: j.green_duration_ns || 30,
                 };
-            }));
+            });
+            setJunctions(mapped);
+        };
 
-            // Simulate slight stat changes
-            setStats(prev => prev.map(s => {
-                if (s.label === 'Current Congestion') {
-                    const current = parseInt(s.value);
-                    const delta = Math.floor(Math.random() * 3) - 1;
-                    return { ...s, value: `${Math.max(10, Math.min(90, current + delta))}%` };
-                }
-                return s;
-            }));
+        ws.onerror = () => {
+            setJunctions([]);
+        };
 
-        }, 1000);
+        const interval = setInterval(() => {
+            setStats((prev) =>
+                prev.map((s) => {
+                    if (s.label !== 'Current Congestion') return s;
+                    const next = junctions.length
+                        ? Math.min(95, Math.max(5, Math.round((junctions.filter((j) => j.status !== 'smooth').length / junctions.length) * 100)))
+                        : 0;
+                    return { ...s, value: `${next}%` };
+                })
+            );
+        }, 1500);
 
-        return () => clearInterval(interval);
+        return () => {
+            ws.close();
+            clearInterval(interval);
+        };
     }, []);
 
     return { junctions, stats };

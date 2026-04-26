@@ -42,7 +42,7 @@ const Login = () => {
         // Simulate small network delay for demo flow
         await new Promise(r => setTimeout(r, 600));
 
-        const result = login(email, password, selectedRole);
+        const result = await login(email, password);
 
         if (result.success) {
             navigate('/', { replace: true });

@@ -1,17 +1,36 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { TrafficLineChart } from '../../components/charts/TrafficLineChart';
 import { Brain, TrendingUp, AlertCircle, Clock, Timer, Zap } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const TrafficPrediction = () => {
-    const PREDICTED_DATA = [
-        { time: '14:00', volume: 520 },
-        { time: '15:00', volume: 580 },
-        { time: '16:00', volume: 710 },
-        { time: '17:00', volume: 850 },
-        { time: '18:00', volume: 790 },
-        { time: '19:00', volume: 520 },
-    ];
+    const [PREDICTED_DATA, setPredictedData] = useState([]);
+
+    useEffect(() => {
+        const run = async () => {
+            const token = sessionStorage.getItem('access_token');
+            const junctionRes = await fetch('http://localhost:8000/junctions', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const junctionData = await junctionRes.json();
+            const first = junctionData?.data?.[0];
+            if (!first) return;
+            const res = await fetch(
+                `http://localhost:8000/predict/traffic?junction_id=${first.id}&minutes=30`,
+                { headers: { Authorization: `Bearer ${token}` } }
+            );
+            const data = await res.json();
+            if (data.success) {
+                setPredictedData(
+                    data.data.forecast.map((p) => ({
+                        time: `${p.minutes_from_now}m`,
+                        volume: p.predicted_volume,
+                    }))
+                );
+            }
+        };
+        run();
+    }, []);
 
     const hotspots = [
         { location: 'Central Freeway', probability: 85, duration: '45m', start: '16:45' },
