@@ -39,9 +39,6 @@ const Login = () => {
         setError('');
         setLoading(true);
 
-        // Simulate small network delay for demo flow
-        await new Promise(r => setTimeout(r, 600));
-
         const result = await login(email, password);
 
         if (result.success) {

@@ -1,10 +1,23 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { MOCK_HEALTH } from '../../data/mockData';
 import { cn } from '../../utils/cn';
 import { ShieldCheck, Server, Video, Network, Cpu, AlertCircle, Brain, Activity } from 'lucide-react';
+import { api } from '../../lib/api';
+import { PageLoader } from '../../components/ui/Spinner';
 
 const SystemHealth = () => {
+    const [health, setHealth] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const load = () => api('/sensors').then(setHealth).catch(() => {}).finally(() => setLoading(false));
+        load();
+        const t = setInterval(load, 15000);
+        return () => clearInterval(t);
+    }, []);
+
     const getIcon = (name) => {
+        if (!name) return <Activity size={18} />;
         if (name.includes('Camera')) return <Video size={18} />;
         if (name.includes('Sensor')) return <Cpu size={18} />;
         if (name.includes('AI')) return <Brain size={18} />;
@@ -12,6 +25,8 @@ const SystemHealth = () => {
         if (name.includes('API')) return <Network size={18} />;
         return <Activity size={18} />;
     };
+
+    if (loading) return <PageLoader />;
 
     return (
         <div className="space-y-6">
@@ -28,10 +43,10 @@ const SystemHealth = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                    { label: 'Uptime', val: '99.98%', detail: 'Last 7 days' },
-                    { label: 'Avg Latency', val: '24ms', detail: 'Edge-to-Cloud' },
-                    { label: 'Active Devices', val: '1,204', detail: '4 currently offline' },
-                    { label: 'AI Accuracy', val: '96.2%', detail: 'L7 average' },
+                    { label: 'Total Sensors', val: health?.total || '--', detail: 'Across all junctions' },
+                    { label: 'Online Status', val: health?.online || '--', detail: 'Active & responding' },
+                    { label: 'Offline Status', val: health?.offline || '--', detail: 'Currently disconnected' },
+                    { label: 'Health Score', val: `${health?.health_percent || '--'}%`, detail: 'Overall system health' },
                 ].map((stat, i) => (
                     <div key={i} className="glass-card p-5">
                         <p className="text-xs text-slate-500 uppercase tracking-widest font-bold mb-1">{stat.label}</p>
@@ -43,64 +58,26 @@ const SystemHealth = () => {
 
             <div className="glass-card overflow-hidden">
                 <div className="p-6 border-b border-slate-800">
-                    <h3 className="text-lg font-semibold text-slate-100">Infrastructure Nodes</h3>
+                    <h3 className="text-lg font-semibold text-slate-100">Sensor Nodes</h3>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-300">
-                        <thead className="bg-slate-900/50 text-slate-500 text-xs uppercase font-black">
-                            <tr>
-                                <th className="px-6 py-4">Node Name</th>
-                                <th className="px-6 py-4">Status</th>
-                                <th className="px-6 py-4">Resource Load</th>
-                                <th className="px-6 py-4">Uptime</th>
-                                <th className="px-6 py-4 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/50 text-slate-400 font-mono">
-                            {MOCK_HEALTH.map((node, i) => (
-                                <tr key={node.name} className="hover:bg-slate-800/20 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-slate-200 flex items-center font-sans">
-                                        <div className="p-2 bg-slate-800 rounded-lg mr-3 text-slate-500">
-                                            {node.name.includes('Camera') ? <Video size={16} /> :
-                                                node.name.includes('Sensor') ? <Cpu size={16} /> :
-                                                    node.name.includes('Database') ? <Server size={16} /> : <Network size={16} />}
-                                        </div>
-                                        {node.name}
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center space-x-2">
-                                            <div className={cn(
-                                                "w-2 h-2 rounded-full",
-                                                node.status === 'operational' ? "bg-green-500 shadow-[0_0_8px_#22c55e]" :
-                                                    node.status === 'warning' ? "bg-yellow-500 animate-pulse" : "bg-red-500"
-                                            )}></div>
-                                            <span className={cn(
-                                                "text-[10px] font-bold uppercase",
-                                                node.status === 'operational' ? "text-green-400" :
-                                                    node.status === 'warning' ? "text-yellow-400" : "text-red-400"
-                                            )}>{node.status}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="flex-1 h-1.5 w-24 bg-slate-800 rounded-full overflow-hidden">
-                                                <div className={cn(
-                                                    "h-full",
-                                                    parseInt(node.load) > 80 ? "bg-red-500" :
-                                                        parseInt(node.load) > 50 ? "bg-yellow-500" : "bg-blue-500"
-                                                )} style={{ width: node.load }}></div>
-                                            </div>
-                                            <span className="text-xs">{node.load}</span>
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4 text-xs">{node.uptime}</td>
-                                    <td className="px-6 py-4 text-right">
-                                        <button className="text-xs text-blue-400 hover:text-blue-300 font-bold transition-colors">DIAGNOSTICS</button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                <div className="p-6 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {health?.sensors?.map(s => (
+                        <div key={s.id} className="bg-slate-700/50 border border-slate-700 rounded-lg p-4 transition-all hover:bg-slate-700">
+                            <div className="flex justify-between items-center mb-2">
+                                <span className="text-white text-sm font-bold flex items-center gap-2">
+                                    {getIcon(s.sensor_type)} {s.sensor_code}
+                                </span>
+                                <span className={`w-2.5 h-2.5 rounded-full ${s.status === 'ONLINE' ? 'bg-green-400 shadow-[0_0_8px_#4ade80]' : 'bg-red-400 animate-pulse shadow-[0_0_8px_#f87171]'}`} />
+                            </div>
+                            <p className="text-slate-400 text-xs mb-1">{s.sensor_type.replace('_', ' ')}</p>
+                            <p className={`text-[10px] font-bold tracking-wider ${s.status === 'ONLINE' ? 'text-green-400' : 'text-red-400'}`}>{s.status}</p>
+                        </div>
+                    ))}
+                    {(!health?.sensors || health.sensors.length === 0) && (
+                        <div className="col-span-full py-8 text-center text-slate-500">
+                            No sensor data available
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -3,23 +3,41 @@ import { Download, Filter, FileJson, FileText, Table as TableIcon } from 'lucide
 import { TrafficLineChart } from '../../components/charts/TrafficLineChart';
 import { MOCK_CHART_DATA } from '../../data/mockData';
 import { cn } from '../../utils/cn';
+import { api } from '../../lib/api';
+import { showToast } from '../../components/ui/Toast';
+import { Spinner } from '../../components/ui/Spinner';
 
 const Analytics = () => {
-    const [co2Data, setCO2Data] = useState(null);
+    const [co2Data, setCo2Data] = useState(null);
+    const [summary, setSummary] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [exporting, setExporting] = useState(false);
 
     useEffect(() => {
-        const fetchCO2 = async () => {
-            const token = sessionStorage.getItem('access_token');
-            const res = await fetch('http://localhost:8000/analytics/co2', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-            const data = await res.json();
-            if (data.success) {
-                setCO2Data(data.data);
-            }
-        };
-        fetchCO2();
+        Promise.all([
+            api('/analytics/co2'),
+            api('/analytics/summary'),
+        ]).then(([co2, sum]) => { setCo2Data(co2); setSummary(sum); })
+            .catch(e => showToast(e.message, 'error'))
+            .finally(() => setLoading(false));
+        const t = setInterval(() => {
+            api('/analytics/co2').then(setCo2Data).catch(() => {});
+        }, 30000);
+        return () => clearInterval(t);
     }, []);
+
+    const exportCSV = async () => {
+        setExporting(true);
+        try {
+            const token = localStorage.getItem('stms_token');
+            const res = await fetch('http://localhost:8000/analytics/export', { headers: { Authorization: `Bearer ${token}` } });
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'stms_traffic_export.csv'; a.click();
+            showToast('CSV exported successfully', 'success');
+        } catch { showToast('Export failed', 'error'); }
+        finally { setExporting(false); }
+    };
 
     const reports = [
         { title: 'Monthly Congestion Report', date: 'Mar 1, 2026', type: 'PDF', size: '2.4 MB' },
@@ -34,44 +52,37 @@ const Analytics = () => {
                 <div>
                     <h2 className="text-2xl font-bold text-slate-100">Analytics & Reports</h2>
                     <p className="text-slate-400">Deep dive into historical traffic data and trends</p>
-                    {co2Data && (
-                        <p className="text-xs text-blue-300 mt-2">
-                            City CO2: {co2Data.city_total_co2_tons} tons | Annual projected: {co2Data.annual_projected_tons} tons
-                        </p>
-                    )}
+                    <p className="text-xs text-blue-300 mt-2">
+                        City CO2: {co2Data?.city_total_co2_kg?.toFixed(2) || '--'} kg | Annual projected: {co2Data?.annual_projected_tons?.toLocaleString() || '--'} tons
+                    </p>
                 </div>
                 <div className="flex space-x-3">
                     <button className="bg-slate-800 hover:bg-slate-700 text-slate-100 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
                         <Filter size={16} className="mr-2" /> Filters
                     </button>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
-                        <Download size={16} className="mr-2" /> EXPORT ALL
+                    <button onClick={exportCSV} disabled={exporting} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
+                        {exporting ? <Spinner size="sm" /> : <Download size={16} className="mr-2" />} EXPORT ALL
                     </button>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <TrafficLineChart data={MOCK_CHART_DATA} title="Volume Trend (Weekly)" />
-                <div className="glass-card p-6">
-                    <h3 className="text-lg font-semibold text-slate-100 mb-6">Historical Comparison</h3>
-                    <div className="space-y-6 flex flex-col justify-center h-[300px]">
-                        {[
-                            { label: 'Vs. Last Month', val: 12.5, status: 'improvement' },
-                            { label: 'Vs. Last Year', val: 4.8, status: 'improvement' },
-                            { label: 'Target Efficiency', val: 2.1, status: 'lagging' },
-                        ].map((item, i) => (
-                            <div key={i} className="space-y-2">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-slate-400">{item.label}</span>
-                                    <span className={item.status === 'improvement' ? 'text-green-400' : 'text-red-400'}>
-                                        {item.status === 'improvement' ? '+' : '-'}{item.val}%
-                                    </span>
-                                </div>
-                                <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                                    <div className={cn("h-full", item.status === 'improvement' ? 'bg-green-500' : 'bg-red-500')} style={{ width: `${item.val * 5}%` }}></div>
-                                </div>
-                            </div>
-                        ))}
+                <div className="glass-card p-6 flex flex-col justify-between">
+                    <h3 className="text-lg font-semibold text-slate-100 mb-6">Traffic Summary Stats</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">Total Junctions</p>
+                            <p className="text-2xl font-bold text-slate-100 mt-1">{summary?.total_junctions || '--'}</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">Total Vehicles</p>
+                            <p className="text-2xl font-bold text-blue-400 mt-1">{summary?.total_vehicles_now || '--'}</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl col-span-2">
+                            <p className="text-sm text-slate-400 uppercase">Busiest Junction</p>
+                            <p className="text-xl font-bold text-orange-400 mt-1">{summary?.busiest_junction?.name || '--'}</p>
+                        </div>
                     </div>
                 </div>
             </div>

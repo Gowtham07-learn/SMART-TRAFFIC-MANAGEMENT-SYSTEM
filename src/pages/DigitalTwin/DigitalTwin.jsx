@@ -1,9 +1,58 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Play, RotateCcw, Save, Settings2, BarChart, Clock, Fuel, Wind, Zap } from 'lucide-react';
 import { cn } from '../../utils/cn';
+import { api } from '../../lib/api';
+import { showToast } from '../../components/ui/Toast';
+import { Spinner } from '../../components/ui/Spinner';
 
 const DigitalTwin = () => {
-    const metrics = [
+    const [junctions, setJunctions] = useState([]);
+    const [modifications, setModifications] = useState([]);
+    const [running, setRunning] = useState(false);
+    const [results, setResults] = useState(null);
+
+    useEffect(() => { 
+        api('/junctions').then(setJunctions).catch(() => {}); 
+    }, []);
+
+    const runSim = async () => {
+        setRunning(true);
+        try {
+            const { simulation_id } = await api('/simulation/run', {
+                method: 'POST',
+                body: JSON.stringify({
+                    scenario_description: 'Custom timing scenario',
+                    modified_junctions: modifications,
+                    duration_minutes: 60,
+                }),
+            });
+            showToast('Simulation started...', 'info');
+            // Poll for results
+            const poll = setInterval(async () => {
+                const res = await api(`/simulation/results/${simulation_id}`);
+                if (res.status === 'COMPLETE') {
+                    clearInterval(poll);
+                    setResults(res.results);
+                    setRunning(false);
+                    showToast('Simulation complete!', 'success');
+                } else if (res.status === 'FAILED') {
+                    clearInterval(poll);
+                    setRunning(false);
+                    showToast('Simulation failed', 'error');
+                }
+            }, 2000);
+        } catch (e) {
+            showToast(e.message, 'error');
+            setRunning(false);
+        }
+    };
+
+    const metrics = results ? [
+        { label: 'Avg Improvement', value: `${results.summary?.avg_improvement_percent?.toFixed(1) || 0}%`, trend: 'up', color: 'text-green-400' },
+        { label: 'Avg Delay Baseline', value: `${results.summary?.baseline_avg_delay_seconds?.toFixed(1) || 0}s`, trend: 'down', color: 'text-orange-400' },
+        { label: 'Avg Delay Scenario', value: `${results.summary?.scenario_avg_delay_seconds?.toFixed(1) || 0}s`, trend: 'up', color: 'text-blue-400' },
+        { label: 'Total Junctions Optimized', value: results.junctions?.length || 0, trend: 'up', color: 'text-purple-400' },
+    ] : [
         { label: 'Avg Delay', value: '+1.2s', trend: 'up', color: 'text-red-400' },
         { label: 'Throughput', value: '4,200/h', trend: 'down', color: 'text-green-400' },
         { label: 'Fuel Saved', value: '128L', trend: 'up', color: 'text-blue-400' },
@@ -21,8 +70,8 @@ const DigitalTwin = () => {
                     <button className="bg-slate-800 hover:bg-slate-700 text-slate-100 px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
                         <RotateCcw size={16} className="mr-2" /> Reset
                     </button>
-                    <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
-                        <Play size={16} className="mr-2" /> RUN SIMULATION
+                    <button onClick={runSim} disabled={running} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center">
+                        {running ? <><Spinner size="sm" /> <span className="ml-2">Running...</span></> : <><Play size={16} className="mr-2" /> RUN SIMULATION</>}
                     </button>
                 </div>
             </div>
@@ -72,12 +121,36 @@ const DigitalTwin = () => {
                 </div>
 
                 <div className="xl:col-span-2 glass-card p-6 bg-slate-900/30 overflow-hidden relative min-h-[500px] flex items-center justify-center border-2 border-dashed border-slate-800">
-                    <div className="text-center">
-                        <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
-                            <Zap className="text-blue-500 animate-pulse" size={40} />
-                        </div>
-                        <h3 className="text-lg font-bold text-slate-100">Simulation Engine Ready</h3>
-                        <p className="text-sm text-slate-500 max-w-xs mx-auto mt-2">Configure parameters on the left and click 'Run Simulation' to visualize flow changes.</p>
+                    <div className="text-center w-full max-w-lg z-10">
+                        {!results ? (
+                            <>
+                                <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-500/20">
+                                    <Zap className="text-blue-500 animate-pulse" size={40} />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-100">Simulation Engine Ready</h3>
+                                <p className="text-sm text-slate-500 mx-auto mt-2">Configure parameters on the left and click 'Run Simulation' to visualize flow changes.</p>
+                            </>
+                        ) : (
+                            <div className="space-y-4">
+                                <h3 className="text-xl font-bold text-green-400 mb-6">Simulation Complete</h3>
+                                <div className="space-y-3 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {results.junctions?.map(r => (
+                                        <div key={r.junction_id} className="bg-slate-800 rounded-xl p-4 text-left border border-slate-700">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="font-semibold text-slate-100">{r.junction_name}</span>
+                                                <span className="text-xs font-bold px-2 py-1 bg-green-500/20 text-green-400 rounded">
+                                                    +{r.improvement_percent.toFixed(1)}% Improv.
+                                                </span>
+                                            </div>
+                                            <div className="flex gap-4 text-xs">
+                                                <span className="text-slate-400">Baseline Delay: <span className="text-orange-300">{r.baseline_avg_delay_seconds.toFixed(1)}s</span></span>
+                                                <span className="text-slate-400">Scenario Delay: <span className="text-blue-300">{r.scenario_avg_delay_seconds.toFixed(1)}s</span></span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Animated decorative elements to simulate a map system */}
