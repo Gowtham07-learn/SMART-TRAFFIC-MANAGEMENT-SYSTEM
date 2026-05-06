@@ -1,9 +1,24 @@
 // src/lib/api.js
-const BASE = 'http://localhost:8000';
+export const BASE = 'http://localhost:8000';
 
-export const getToken = () => localStorage.getItem('stms_token');
+export const getToken = () => {
+  // Primary auth flow stores tokens in sessionStorage (`access_token`).
+  // Keep backward compatibility with earlier localStorage keys.
+  return (
+    sessionStorage.getItem('access_token') ||
+    localStorage.getItem('stms_token') ||
+    localStorage.getItem('access_token')
+  );
+};
 export const getUser = () => {
-  try { return JSON.parse(localStorage.getItem('stms_user')); } catch { return null; }
+  try {
+    return (
+      JSON.parse(sessionStorage.getItem('user')) ||
+      JSON.parse(localStorage.getItem('stms_user'))
+    );
+  } catch {
+    return null;
+  }
 };
 
 export async function api(path, options = {}) {

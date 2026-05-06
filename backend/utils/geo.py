@@ -1,5 +1,23 @@
 import math
 
+COIMBATORE_BOUNDS = {
+    "lat_min": 10.90,
+    "lat_max": 11.10,
+    "lon_min": 76.85,
+    "lon_max": 77.10,
+}
+
+
+def within_coimbatore(lat: float, lon: float) -> bool:
+    return (
+        COIMBATORE_BOUNDS["lat_min"] <= lat <= COIMBATORE_BOUNDS["lat_max"]
+        and COIMBATORE_BOUNDS["lon_min"] <= lon <= COIMBATORE_BOUNDS["lon_max"]
+    )
+
+
+def coimbatore_junctions(junctions: list) -> list:
+    return [j for j in junctions if within_coimbatore(j["latitude"], j["longitude"])]
+
 def haversine_distance(lat1, lon1, lat2, lon2) -> float:
     """Returns distance in kilometers between two lat/lon points."""
     R = 6371
@@ -78,3 +96,32 @@ def find_optimal_route(junctions: list, source_lat: float, source_lon: float,
         "total_distance_km": round(total_dist, 2),
         "estimated_time_minutes": round((total_dist / 30) * 60, 1)
     }
+
+HOSPITALS = [
+    {"id": "h1", "name": "CMCH", "latitude": 11.002, "longitude": 77.001},
+    {"id": "h2", "name": "Ganga Hospital", "latitude": 11.025, "longitude": 76.945},
+    {"id": "h3", "name": "PSG Hospitals", "latitude": 11.023, "longitude": 77.011},
+    {"id": "h4", "name": "KMCH Hospital", "latitude": 11.036, "longitude": 77.054},
+    {"id": "h5", "name": "Sri Ramakrishna Hospital", "latitude": 11.018, "longitude": 76.984},
+    {"id": "h6", "name": "ESI Hospital", "latitude": 11.004, "longitude": 77.019}
+]
+
+JUNCTION_HOSPITAL_MAP = {
+  "PSG Tech Junction": "PSG Hospitals",
+  "Peelamedu Junction": "PSG Hospitals",
+  "Gandhipuram Junction": "Ganga Hospital",
+  "RS Puram Junction": "Ganga Hospital",
+  "Singanallur Junction": "ESI Hospital",
+  "Ukkadam Junction": "CMCH"
+}
+
+def find_nearest_hospital(lat: float, lon: float) -> dict:
+    return min(HOSPITALS, key=lambda h: haversine_distance(lat, lon, h["latitude"], h["longitude"]))
+
+def get_hospital_for_junction(junction_name: str, lat: float, lon: float) -> dict:
+    hospital_name = JUNCTION_HOSPITAL_MAP.get(junction_name)
+    if hospital_name:
+        for h in HOSPITALS:
+            if h["name"] == hospital_name:
+                return h
+    return find_nearest_hospital(lat, lon)

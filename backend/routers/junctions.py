@@ -10,15 +10,21 @@ from services.auth_service import get_current_user, require_roles
 from services.signal_service import update_signal, clamp
 from utils.response import success, error
 from app_state import get_redis
+from utils.geo import COIMBATORE_BOUNDS
 
 router = APIRouter(tags=["Junctions"])
 
 def _signal_dict(sig):
     if not sig:
         return None
+
+    current_phase = sig.current_phase
+    if hasattr(current_phase, "value"):
+        current_phase = current_phase.value
+
     return {
         "signal_id": sig.signal_id,
-        "current_phase": sig.current_phase.value,
+        "current_phase": current_phase or "NS_GREEN",
         "green_duration_ns": sig.green_duration_ns,
         "green_duration_ew": sig.green_duration_ew,
         "vehicle_count_ns": sig.vehicle_count_ns,
@@ -30,9 +36,15 @@ def _signal_dict(sig):
 
 @router.get("")
 async def get_all_junctions(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    j_result = await db.execute(select(Junction))
+    j_result = await db.execute(
+        select(Junction).where(
+            Junction.latitude.between(COIMBATORE_BOUNDS["lat_min"], COIMBATORE_BOUNDS["lat_max"]),
+            Junction.longitude.between(COIMBATORE_BOUNDS["lon_min"], COIMBATORE_BOUNDS["lon_max"]),
+        )
+    )
     junctions = j_result.scalars().all()
-    s_result = await db.execute(select(TrafficSignal))
+    junction_ids = [j.id for j in junctions]
+    s_result = await db.execute(select(TrafficSignal).where(TrafficSignal.junction_id.in_(junction_ids)))
     signals = {str(s.junction_id): s for s in s_result.scalars().all()}
 
     data = []
@@ -40,7 +52,24 @@ async def get_all_junctions(current_user=Depends(get_current_user), db: AsyncSes
         sig = signals.get(str(j.id))
         total = (sig.vehicle_count_ns + sig.vehicle_count_ew) if sig else 0
         congestion = "LOW" if total < 50 else "MEDIUM" if total < 100 else "HIGH" if total < 150 else "CRITICAL"
-        data.append({"id": str(j.id), "name": j.name, "j_location": j.j_location, "latitude": j.latitude, "longitude": j.longitude, "lane_count": j.lane_count, "status": j.status.value, "congestion_level": congestion, "signal": _signal_dict(sig)})
+        current_phase = "NS_GREEN"
+        if sig and sig.current_phase:
+            current_phase = sig.current_phase.value if hasattr(sig.current_phase, "value") else str(sig.current_phase)
+        time_remaining = sig.green_duration_ns if sig and current_phase == "NS_GREEN" else sig.green_duration_ew if sig else 30
+        data.append({
+            "id": str(j.id),
+            "name": j.name,
+            "j_location": j.j_location,
+            "latitude": j.latitude,
+            "longitude": j.longitude,
+            "lane_count": j.lane_count,
+            "status": j.status.value,
+            "congestion_level": congestion,
+            "signal_phase": current_phase,
+            "vehicle_count": total,
+            "time_remaining": time_remaining,
+            "signal": _signal_dict(sig),
+        })
     return success(data)
 
 @router.put("/{junction_id}/signal")

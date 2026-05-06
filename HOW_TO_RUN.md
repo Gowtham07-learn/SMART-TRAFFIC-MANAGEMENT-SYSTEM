@@ -73,7 +73,7 @@ Frontend URL (Vite default): [http://localhost:5173](http://localhost:5173)
 
 ## 3) Test Login Credentials
 
-Password for all users: `test1234`
+Password for all users: `test@1234`
 
 - `admin@gmail.com` (ADMIN)
 - `traffic@gmail.com` (TRAFFIC_CONTROLLER)

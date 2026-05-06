@@ -8,7 +8,6 @@ import {
     Zap,
     BarChart3,
     Activity,
-    Settings,
     ChevronLeft,
     Menu
 } from 'lucide-react';
@@ -27,7 +26,6 @@ const menuItems = [
     { icon: Zap, label: 'Digital Twin', path: '/digital-twin', allowedRoles: [ROLES.ADMIN] },
     { icon: BarChart3, label: 'Analytics', path: '/analytics', allowedRoles: [ROLES.ADMIN, ROLES.TRAFFIC_CONTROLLER] },
     { icon: Activity, label: 'System Health', path: '/health', allowedRoles: [ROLES.ADMIN] },
-    { icon: Settings, label: 'Settings', path: '/settings', allowedRoles: [ROLES.ADMIN] },
     
     // Emergency Driver specific routes
     { icon: MapIcon, label: 'Navigation / Route View', path: '/emergency-route', allowedRoles: [ROLES.EMERGENCY_DRIVER] },

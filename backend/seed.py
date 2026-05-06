@@ -1,6 +1,14 @@
 import asyncio
 from database import AsyncSessionLocal, engine, Base
 from models.user import User, RoleEnum
+import models.analytics
+import models.emergency
+import models.incident
+import models.iot_sensor
+import models.junction
+import models.route
+import models.signal
+import models.traffic_flow
 from services.auth_service import hash_password
 
 USERS = [
@@ -15,11 +23,11 @@ async def seed():
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
-        hp = hash_password('test1234')
+        hp = hash_password('test@1234')
         for u in USERS:
             db.add(User(email=u['email'], hashed_password=hp, full_name=u['full_name'], role=u['role'], phone_number=u['phone']))
         await db.commit()
-    print('SEED COMPLETE - password test1234')
+    print('SEED COMPLETE - password test@1234')
 
 if __name__ == '__main__':
     asyncio.run(seed())

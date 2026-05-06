@@ -36,8 +36,17 @@ export default function RouteRecommendations() {
     }));
   };
 
+  const normalizeRouteResult = (data) => ({
+    ...data,
+    waypoints: data?.waypoints || data?.junctions || [],
+  });
+
   const findRoute = async () => {
     if (!form.s_lat || !form.d_lat) { showToast('Select source and destination junctions', 'error'); return; }
+    if (form.s_lat === form.d_lat && form.s_lon === form.d_lon) {
+      showToast('Source and destination must be different junctions', 'error');
+      return;
+    }
     setFinding(true);
     try {
       const data = await api('/routes/find', {
@@ -47,8 +56,9 @@ export default function RouteRecommendations() {
           d_location: form.d_location, d_lat: parseFloat(form.d_lat), d_lon: parseFloat(form.d_lon),
         }),
       });
-      setResult(data);
-      setHistory(h => [data, ...h.slice(0, 4)]);
+      const normalized = normalizeRouteResult(data);
+      setResult(normalized);
+      setHistory(h => [normalized, ...h.slice(0, 4)]);
       showToast(`Route found: ${data.total_distance_km} km`, 'success');
     } catch (e) {
       showToast(e.message, 'error');
@@ -57,7 +67,10 @@ export default function RouteRecommendations() {
     }
   };
 
-  const routeCoords = result?.waypoints?.map(j => [j.latitude, j.longitude]) || [];
+  const activeWaypoints = result?.waypoints || result?.junctions || [];
+  const routeCoords = result?.path_coordinates?.length
+    ? result.path_coordinates
+    : activeWaypoints.map(j => [j.latitude, j.longitude]);
 
   return (
     <div className="p-6 space-y-6">
@@ -111,9 +124,9 @@ export default function RouteRecommendations() {
                 </div>
               </div>
               <div>
-                <p className="text-slate-300 text-xs font-medium mb-2">Waypoints ({result.waypoints?.length || 0} junctions)</p>
+                <p className="text-slate-300 text-xs font-medium mb-2">Waypoints ({activeWaypoints.length} junctions)</p>
                 <div className="space-y-1 max-h-40 overflow-y-auto">
-                  {result.waypoints?.map((w, i) => (
+                    {activeWaypoints.map((w, i) => (
                     <div key={w.id} className="flex items-center gap-2 text-xs text-slate-300">
                       <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold flex-shrink-0">{i+1}</span>
                       {w.name}
@@ -130,7 +143,7 @@ export default function RouteRecommendations() {
               <p className="text-slate-400 text-xs font-medium mb-2">Recent Routes</p>
               {history.map((r, i) => (
                 <div key={i} onClick={() => setResult(r)} className="flex justify-between text-xs text-slate-300 py-1.5 border-b border-slate-700 hover:text-white cursor-pointer">
-                  <span>{r.source} → {r.destination}</span>
+                  <span>{r.source?.address || r.s_location || 'Source'} → {r.destination?.address || r.d_location || 'Destination'}</span>
                   <span className="text-blue-400">{r.total_distance_km} km</span>
                 </div>
               ))}
@@ -148,13 +161,13 @@ export default function RouteRecommendations() {
                   <Popup><b>{j.name}</b><br />{j.location}</Popup>
                 </Marker>
               ))}
-              {result?.waypoints?.length > 0 && (
+              {activeWaypoints.length > 0 && (
                 <>
-                  <Marker position={[result.waypoints[0].latitude, result.waypoints[0].longitude]} icon={greenIcon}>
-                    <Popup>🟢 Start: {result.waypoints[0].name}</Popup>
+                  <Marker position={[activeWaypoints[0].latitude, activeWaypoints[0].longitude]} icon={greenIcon}>
+                    <Popup>🟢 Start: {activeWaypoints[0].name}</Popup>
                   </Marker>
-                  <Marker position={[result.waypoints.at(-1).latitude, result.waypoints.at(-1).longitude]} icon={redIcon}>
-                    <Popup>🔴 End: {result.waypoints.at(-1).name}</Popup>
+                  <Marker position={[activeWaypoints[activeWaypoints.length - 1].latitude, activeWaypoints[activeWaypoints.length - 1].longitude]} icon={redIcon}>
+                    <Popup>🔴 End: {activeWaypoints[activeWaypoints.length - 1].name}</Popup>
                   </Marker>
                   <Polyline positions={routeCoords} color="#3b82f6" weight={4} dashArray="8 4" />
                 </>

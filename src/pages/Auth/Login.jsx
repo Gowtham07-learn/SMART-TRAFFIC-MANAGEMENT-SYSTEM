@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth, ROLES } from '../../contexts/AuthContext';
-import { Shield, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { Shield, Mail, Lock, AlertCircle, Loader2, Eye, EyeOff } from 'lucide-react';
 
 const roleLabels = {
     [ROLES.ADMIN]: 'Administrator',
@@ -21,28 +21,72 @@ const Login = () => {
     const { login, user } = useAuth();
     const navigate = useNavigate();
 
+    const getDefaultRoute = (role) => {
+        switch (role) {
+            case ROLES.ADMIN:
+            case ROLES.TRAFFIC_CONTROLLER:
+                return '/';
+            case ROLES.EMERGENCY_DRIVER:
+                return '/emergency-route';
+            case ROLES.CITIZEN:
+                return '/map';
+            default:
+                return '/';
+        }
+    };
+
     const [selectedRole, setSelectedRole] = useState(ROLES.ADMIN);
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const [password, setPassword] = useState('test@1234');
+    const [showPassword, setShowPassword] = useState(false);
+    const [passwordError, setPasswordError] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // Auto-redirect if already logged in natively
     useEffect(() => {
         if (user) {
-            navigate('/', { replace: true });
+            navigate(getDefaultRoute(user.role), { replace: true });
         }
     }, [user, navigate]);
+
+    const handlePasswordChange = (e) => {
+        const val = e.target.value;
+        setPassword(val);
+        if (val.length > 0) {
+            let errs = [];
+            if (val.length < 8) errs.push('min 8 char');
+            if (!/[0-9]/.test(val)) errs.push('one num');
+            if (!/[^A-Za-z0-9]/.test(val)) errs.push('one special char');
+            setPasswordError(errs.length > 0 ? '* ' + errs.join(', ') : '');
+        } else {
+            setPasswordError('');
+        }
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+
+        const missing = [];
+        if (!email.trim()) missing.push('email address');
+        if (!password) missing.push('password');
+
+        if (missing.length > 0) {
+            setError(`Please enter your ${missing.join(' and ')}.`);
+            return;
+        }
+
+        if (passwordError) {
+            setError('Please enter a valid strong password.');
+            return;
+        }
+
         setLoading(true);
 
         const result = await login(email, password);
 
         if (result.success) {
-            navigate('/', { replace: true });
+            navigate(getDefaultRoute(selectedRole), { replace: true });
         } else {
             setError(result.error || 'Incorrect email or password');
         }
@@ -116,13 +160,23 @@ const Login = () => {
                                     <Lock size={18} className="text-slate-500" />
                                 </div>
                                 <input
-                                    type="password"
+                                    type={showPassword ? "text" : "password"}
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={handlePasswordChange}
                                     placeholder="Password"
-                                    className="w-full pl-11 pr-4 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono text-sm"
+                                    className="w-full pl-11 pr-12 py-3 bg-slate-950/50 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all font-mono text-sm"
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                                >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
+                            {passwordError && (
+                                <p className="text-red-500 text-xs pl-2">{passwordError}</p>
+                            )}
                         </div>
 
                         <button

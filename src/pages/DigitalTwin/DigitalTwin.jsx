@@ -180,9 +180,7 @@ const DigitalTwin = () => {
                             </div>
                         ))}
                     </div>
-                    <button className="w-full py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold hover:bg-slate-700 transition-all flex items-center justify-center">
-                        <Save size={14} className="mr-2" /> SAVE SCENARIO
-                    </button>
+
                 </div>
             </div>
         </div>

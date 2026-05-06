@@ -16,6 +16,7 @@ import SystemHealth from './pages/SystemHealth/SystemHealth';
 import Alerts from './pages/Alerts/Alerts';
 import ReportIncident from './pages/ReportIncident/ReportIncident';
 import RouteRecommendations from './pages/RouteRecommendations/RouteRecommendations';
+import EmergencyRoute from './pages/EmergencyRoute/EmergencyRoute';
 
 // Placeholder components for other pages
 const Placeholder = ({ name }) => (
@@ -42,9 +43,8 @@ function App() {
                 <Route path="/digital-twin" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]}><DigitalTwin /></ProtectedRoute>} />
                 <Route path="/analytics" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.TRAFFIC_CONTROLLER]}><Analytics /></ProtectedRoute>} />
                 <Route path="/health" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]}><SystemHealth /></ProtectedRoute>} />
-                <Route path="/settings" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN]}><Placeholder name="Settings" /></ProtectedRoute>} />
                 
-                <Route path="/emergency-route" element={<ProtectedRoute allowedRoles={[ROLES.EMERGENCY_DRIVER]}><Placeholder name="Navigation / Route View" /></ProtectedRoute>} />
+                <Route path="/emergency-route" element={<ProtectedRoute allowedRoles={[ROLES.EMERGENCY_DRIVER]}><EmergencyRoute /></ProtectedRoute>} />
 
                 <Route path="/alerts" element={<ProtectedRoute allowedRoles={[ROLES.CITIZEN]}><Alerts /></ProtectedRoute>} />
                 <Route path="/report" element={<ProtectedRoute allowedRoles={[ROLES.CITIZEN]}><ReportIncident /></ProtectedRoute>} />

@@ -6,12 +6,18 @@ from models.junction import Junction
 from models.signal import TrafficSignal
 from models.analytics import SimulationResult
 from services.signal_service import clamp
+from utils.geo import within_coimbatore, COIMBATORE_BOUNDS
 
 
 async def run_simulation(db: AsyncSession, simulation_id: str, scenario: dict):
     try:
-        j_result = await db.execute(select(Junction))
-        junctions = j_result.scalars().all()
+        j_result = await db.execute(
+            select(Junction).where(
+                Junction.latitude.between(COIMBATORE_BOUNDS["lat_min"], COIMBATORE_BOUNDS["lat_max"]),
+                Junction.longitude.between(COIMBATORE_BOUNDS["lon_min"], COIMBATORE_BOUNDS["lon_max"]),
+            )
+        )
+        junctions = [j for j in j_result.scalars().all() if within_coimbatore(j.latitude, j.longitude)]
         s_result = await db.execute(select(TrafficSignal))
         signals = {str(s.junction_id): s for s in s_result.scalars().all()}
 

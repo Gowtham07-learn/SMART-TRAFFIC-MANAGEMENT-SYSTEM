@@ -19,6 +19,17 @@ async def find_route_endpoint(body: dict, current_user=Depends(get_current_user)
 
 @router.get('/history')
 async def get_route_history(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(RouteFinder).where(RouteFinder.requested_by == current_user.id).order_by(desc(RouteFinder.created_at)).limit(20))
+    result = await db.execute(
+        select(RouteFinder)
+        .where(
+            RouteFinder.requested_by == current_user.id,
+            RouteFinder.s_lat.between(10.90, 11.10),
+            RouteFinder.s_lon.between(76.85, 77.10),
+            RouteFinder.d_lat.between(10.90, 11.10),
+            RouteFinder.d_lon.between(76.85, 77.10),
+        )
+        .order_by(desc(RouteFinder.created_at))
+        .limit(20)
+    )
     routes = result.scalars().all()
     return success([{'route_id': r.route_id, 's_location': r.s_location, 'd_location': r.d_location, 'distance_km': r.distance, 'time_minutes': r.time, 'created_at': r.created_at.isoformat()} for r in routes])

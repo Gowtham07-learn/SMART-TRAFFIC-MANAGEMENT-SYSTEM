@@ -6,7 +6,7 @@ import { Spinner, EmptyState, PageLoader } from '../../components/ui/Spinner';
 
 export default function EmergencyPriority() {
   const [junctions, setJunctions] = useState([]);
-  const [form, setForm] = useState({ junction_id: '', heading_degrees: 0, vehicle_type: 'AMBULANCE' });
+  const [form, setForm] = useState({ junction_id: '', vehicle_type: 'AMBULANCE' });
   const [activating, setActivating] = useState(false);
   const [activeCorridors, setActiveCorridors] = useState([]);
   const [result, setResult] = useState(null);
@@ -69,11 +69,13 @@ export default function EmergencyPriority() {
             {activeCorridors.map(c => {
               const expiresAt = new Date(c.expires_at);
               const secsLeft = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+              const mins = Math.floor(secsLeft / 60);
+              const secs = secsLeft % 60;
               return (
                 <div key={c.id} className="flex items-center justify-between bg-slate-800/50 rounded-lg p-3">
                   <div>
                     <p className="text-white text-sm font-medium">{c.vehicle_type} — {c.corridor_junction_ids?.length || 0} junctions</p>
-                    <p className="text-slate-400 text-xs">Expires in {secsLeft}s • Heading {c.heading_degrees}°</p>
+                    <p className="text-slate-400 text-xs">Expires in {mins > 0 ? `${mins}m ` : ''}{secs}s</p>
                   </div>
                   <button onClick={() => cancelCorridor(c.id)}
                     className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs rounded-lg transition">
@@ -93,11 +95,11 @@ export default function EmergencyPriority() {
 
           <div>
             <label className="text-slate-300 text-sm font-medium block mb-2">Vehicle Type</label>
-            <div className="grid grid-cols-3 gap-2">
-              {['AMBULANCE', 'FIRE_TRUCK', 'POLICE'].map(v => (
+            <div className="grid grid-cols-1 gap-2">
+              {['AMBULANCE'].map(v => (
                 <button key={v} onClick={() => setForm(f => ({ ...f, vehicle_type: v }))}
                   className={`py-3 rounded-lg text-sm font-medium transition ${form.vehicle_type === v ? 'bg-red-600 text-white' : 'bg-slate-700 text-slate-400 hover:bg-slate-600'}`}>
-                  {v === 'AMBULANCE' ? '🚑' : v === 'FIRE_TRUCK' ? '🚒' : '🚓'} {v.replace('_', ' ')}
+                  🚑 AMBULANCE
                 </button>
               ))}
             </div>
@@ -110,18 +112,7 @@ export default function EmergencyPriority() {
               <option value="">-- Select junction --</option>
               {junctions.map(j => <option key={j.id} value={j.id}>{j.name} ({j.status})</option>)}
             </select>
-          </div>
-
-          <div>
-            <label className="text-slate-300 text-sm font-medium block mb-2">
-              Heading Direction: {form.heading_degrees}° ({['N','NE','E','SE','S','SW','W','NW'][Math.round(form.heading_degrees/45)%8]})
-            </label>
-            <input type="range" min={0} max={359} step={1} value={form.heading_degrees}
-              onChange={e => setForm(f => ({ ...f, heading_degrees: Number(e.target.value) }))}
-              className="w-full accent-red-500" />
-            <div className="flex justify-between text-xs text-slate-500 mt-1">
-              <span>N (0°)</span><span>E (90°)</span><span>S (180°)</span><span>W (270°)</span>
-            </div>
+            <p className="text-slate-400 text-xs mt-2 text-center">System will automatically route to the nearest hospital.</p>
           </div>
 
           <button onClick={activate} disabled={activating}
@@ -129,7 +120,7 @@ export default function EmergencyPriority() {
             {activating ? <><Spinner size="md" /><span>Activating...</span></> : '🚨 ACTIVATE GREEN CORRIDOR'}
           </button>
 
-          <p className="text-slate-500 text-xs text-center">Corridor auto-expires after 120 seconds</p>
+          <p className="text-slate-500 text-xs text-center">Corridor auto-expires after 1 hour</p>
         </div>
 
         {/* Result Panel */}
@@ -141,9 +132,15 @@ export default function EmergencyPriority() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
               <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                 <p className="text-green-400 font-semibold">✓ {result.message}</p>
-                <p className="text-slate-400 text-xs mt-1">Expires: {new Date(result.expires_at).toLocaleTimeString()}</p>
+                {result.destination_hospital && (
+                  <p className="text-white text-sm mt-2">Destination: <span className="font-bold">{result.destination_hospital.name}</span></p>
+                )}
+                <div className="flex justify-between mt-2">
+                  <p className="text-slate-400 text-xs">Est. Time: {result.estimated_time_minutes} mins</p>
+                  <p className="text-slate-400 text-xs">Expires: {new Date(result.expires_at).toLocaleTimeString()}</p>
+                </div>
               </div>
-              <p className="text-slate-300 text-sm font-medium">Cleared Junctions ({result.corridor_junctions?.length}):</p>
+              <p className="text-slate-300 text-sm font-medium">Route Junctions ({result.corridor_junctions?.length}):</p>
               <div className="space-y-2">
                 {result.corridor_junctions?.map((j, i) => (
                   <div key={j.id} className="flex items-center gap-3 bg-slate-700 rounded-lg p-3">

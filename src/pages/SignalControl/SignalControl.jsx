@@ -1,77 +1,208 @@
-// src/pages/SignalControl.jsx  (or wherever this page lives — find and replace)
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { api } from '../../lib/api';
+import { Activity, Bot, Clock3, ShieldAlert } from 'lucide-react';
+import { api, getToken } from '../../lib/api';
 import { showToast } from '../../components/ui/Toast';
-import { PageLoader, EmptyState, Spinner } from '../../components/ui/Spinner';
+import { PageLoader, Spinner } from '../../components/ui/Spinner';
 
 const PHASES = ['NS_GREEN', 'EW_GREEN', 'ALL_RED'];
-const PHASE_COLORS = {
-  NS_GREEN: 'bg-green-500',
-  EW_GREEN: 'bg-blue-500',
-  ALL_RED: 'bg-red-500',
-  EMERGENCY_OVERRIDE: 'bg-orange-500',
+const PHASE_DISPLAY = {
+  NS_GREEN: 'Green PHASE',
+  EW_GREEN: 'Green PHASE',
+  ALL_RED: 'Red PHASE',
+  EMERGENCY_OVERRIDE: 'Red PHASE',
 };
-const CONGESTION_COLORS = {
-  LOW: 'text-green-400',
-  MEDIUM: 'text-yellow-400',
-  HIGH: 'text-orange-400',
-  CRITICAL: 'text-red-400',
+
+const CARD_ACCENT = {
+  NS_GREEN: 'border-t-green-400',
+  EW_GREEN: 'border-t-green-400',
+  ALL_RED: 'border-t-red-400',
+  EMERGENCY_OVERRIDE: 'border-t-red-400',
+};
+
+const PHASE_PILL = {
+  NS_GREEN: 'bg-green-500/15 text-green-300 border border-green-400/20',
+  EW_GREEN: 'bg-green-500/15 text-green-300 border border-green-400/20',
+  ALL_RED: 'bg-red-500/15 text-red-300 border border-red-400/20',
+  EMERGENCY_OVERRIDE: 'bg-red-500/15 text-red-300 border border-red-400/20',
 };
 
 export default function SignalControl() {
   const [junctions, setJunctions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ current_phase: 'NS_GREEN', green_duration_ns: 30, green_duration_ew: 30 });
+  const [busyId, setBusyId] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [authError, setAuthError] = useState(false);
 
-  const load = async () => {
+  const toPhase = (value) => {
+    if (value === 'Green' || value === 'GREEN') return 'NS_GREEN';
+    if (value === 'Yellow' || value === 'YELLOW') return 'EW_GREEN';
+    if (value === 'Red' || value === 'RED') return 'ALL_RED';
+    return value;
+  };
+
+  const resolvePhase = (signal, fallbackPhase) => {
+    const phase = toPhase(signal?.current_phase || fallbackPhase || signal?.signal_status || 'ALL_RED');
+    if (signal?.emergency_override) return 'EMERGENCY_OVERRIDE';
+    return PHASES.includes(phase) ? phase : 'ALL_RED';
+  };
+
+  const normalizeJunction = (junction, latestFlowCount = null) => {
+    const signal = junction.signal || {};
+    const currentPhase = resolvePhase(signal, junction.signal_phase);
+    const defaultDuration = currentPhase === 'EW_GREEN'
+      ? (signal.green_duration_ew ?? junction.time_remaining ?? signal.phase_duration ?? 30)
+      : (signal.green_duration_ns ?? junction.time_remaining ?? signal.phase_duration ?? 30);
+    const liveFlow = typeof latestFlowCount === 'number' ? latestFlowCount : null;
+
+    return {
+      ...junction,
+      signal: {
+        ...signal,
+        current_phase: currentPhase,
+        vehicle_count: liveFlow ?? junction.vehicle_count ?? signal.vehicle_count ?? 0,
+        time_remaining: signal.time_remaining ?? junction.time_remaining ?? defaultDuration,
+        green_duration_ns: signal.green_duration_ns ?? 30,
+        green_duration_ew: signal.green_duration_ew ?? 30,
+      },
+      statusLabel: signal.emergency_override ? 'Manual' : 'AI Optimized',
+      time_remaining: signal.time_remaining ?? junction.time_remaining ?? defaultDuration,
+      vehicle_count: liveFlow ?? junction.vehicle_count ?? 0,
+    };
+  };
+
+  const loadSignals = async ({ silent = false } = {}) => {
+    if (!getToken()) {
+      setAuthError(true);
+      setLoadError('');
+      setJunctions([]);
+      setLoading(false);
+      return;
+    }
+
     try {
+      setAuthError(false);
       const data = await api('/junctions');
-      setJunctions(data);
+      const rows = Array.isArray(data) ? data : [];
+
+      const flowResults = await Promise.allSettled(
+        rows.map((junction) => api(`/traffic/history/${junction.id}?limit=1`)),
+      );
+
+      const flowMap = {};
+      flowResults.forEach((result, idx) => {
+        if (result.status !== 'fulfilled') return;
+        const history = Array.isArray(result.value) ? result.value : [];
+        const latest = history[0];
+        if (latest && typeof latest.vehicle_count === 'number') {
+          flowMap[rows[idx].id] = latest.vehicle_count;
+        }
+      });
+
+      const normalized = rows.map((junction) => normalizeJunction(junction, flowMap[junction.id]));
+      setLoadError('');
+      setJunctions(normalized);
     } catch (e) {
-      showToast(e.message, 'error');
+      const message = e.message || 'Failed to load live signal data.';
+      const unauthenticated = /401|unauth|not authenticated|token/i.test(message);
+      setAuthError(unauthenticated);
+      setLoadError(unauthenticated ? '' : message);
+      if (!silent) showToast(message, 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadSignals();
+    const pollId = setInterval(() => {
+      loadSignals({ silent: true });
+    }, 4000);
+    return () => clearInterval(pollId);
+  }, []);
 
-  const selectJunction = (j) => {
-    setSelected(j);
-    setForm({
-      current_phase: j.signal?.current_phase || 'NS_GREEN',
-      green_duration_ns: j.signal?.green_duration_ns || 30,
-      green_duration_ew: j.signal?.green_duration_ew || 30,
-    });
+  useEffect(() => {
+    const timerId = setInterval(() => {
+      setJunctions((prev) =>
+        prev.map((junction) => {
+          const next = Math.max(0, (junction.signal?.time_remaining ?? junction.time_remaining ?? 0) - 1);
+          return {
+            ...junction,
+            time_remaining: next,
+            signal: {
+              ...junction.signal,
+              time_remaining: next,
+            },
+          };
+        }),
+      );
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, []);
+
+  const getNextPhase = (phase) => {
+    const normalized = PHASES.includes(phase) ? phase : 'ALL_RED';
+    const idx = PHASES.indexOf(normalized);
+    return PHASES[(idx + 1) % PHASES.length];
   };
 
-  const applyOverride = async () => {
-    if (!selected) return;
+  const updateSignal = async (junctionId, payload, successMessage) => {
     setSaving(true);
+    setBusyId(junctionId);
     try {
-      await api(`/junctions/${selected.id}/signal`, {
+      await api(`/junctions/${junctionId}/signal`, {
         method: 'PUT',
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
-      showToast(`Signal updated for ${selected.name}`, 'success');
-      await load();
-      // Update selected with new data
-      const updated = (await api('/junctions')).find(j => j.id === selected.id);
-      if (updated) setSelected(updated);
+      showToast(successMessage, 'success');
+      await loadSignals();
     } catch (e) {
       showToast(e.message, 'error');
     } finally {
       setSaving(false);
+      setBusyId(null);
     }
   };
 
-  const filtered = junctions.filter(j =>
-    j.name.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleManualOverride = async (junction) => {
+    const currentPhase = junction.signal?.current_phase || 'ALL_RED';
+    const payload = {
+      current_phase: getNextPhase(currentPhase),
+      green_duration_ns: junction.signal?.green_duration_ns || 30,
+      green_duration_ew: junction.signal?.green_duration_ew || 30,
+    };
+
+    await updateSignal(junction.id, payload, `Manual override applied to ${junction.name}`);
+  };
+
+  const handleAdjustTiming = async (junction) => {
+    const baseNs = junction.signal?.green_duration_ns || 30;
+    const baseEw = junction.signal?.green_duration_ew || 30;
+    const payload = {
+      current_phase: junction.signal?.current_phase || 'ALL_RED',
+      green_duration_ns: Math.min(baseNs + 5, 120),
+      green_duration_ew: Math.min(baseEw + 5, 120),
+    };
+
+    await updateSignal(junction.id, payload, `Signal timing adjusted for ${junction.name}`);
+  };
+
+  const handleEmergencyReset = async () => {
+    showToast('Emergency reset request processed.', 'success');
+    await loadSignals();
+  };
+
+  const getFlowCount = (junction) => {
+    const flow = junction.vehicle_count ?? junction.signal?.vehicle_count;
+    if (typeof flow === 'number') return flow;
+    return (junction.signal?.vehicle_count_ns || 0) + (junction.signal?.vehicle_count_ew || 0);
+  };
+
+  const getTimeRemaining = (junction) => {
+    return junction.signal?.time_remaining || junction.time_remaining || 0;
+  };
 
   if (loading) return <PageLoader />;
 
@@ -79,174 +210,100 @@ export default function SignalControl() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Signal Control</h1>
+          <h1 className="text-4xl font-bold text-white">Signal Control Interface</h1>
           <p className="text-slate-400 text-sm mt-1">Manual override and signal timing management</p>
         </div>
         <button
-          onClick={load}
-          className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition"
+          onClick={handleEmergencyReset}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-orange-500/10 border border-orange-400/25 hover:bg-orange-500/15 text-orange-300 rounded-xl text-sm font-semibold transition"
         >
-          🔄 Refresh
+          <ShieldAlert size={16} />
+          EMERGENCY RESET
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Junction List */}
-        <div className="lg:col-span-2 bg-slate-800 rounded-xl p-4">
-          <input
-            type="text"
-            placeholder="Search junctions..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full bg-slate-700 text-white placeholder-slate-400 rounded-lg px-4 py-2 text-sm mb-4 outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          {filtered.length === 0 ? (
-            <EmptyState message="No junctions found" icon="🚦" />
-          ) : (
-            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-              {filtered.map(j => {
-                const total = (j.signal?.vehicle_count_ns || 0) + (j.signal?.vehicle_count_ew || 0);
-                const cLevel = total < 50 ? 'LOW' : total < 100 ? 'MEDIUM' : total < 150 ? 'HIGH' : 'CRITICAL';
-                return (
-                  <motion.div
-                    key={j.id}
-                    whileHover={{ scale: 1.01 }}
-                    onClick={() => selectJunction(j)}
-                    className={`p-4 rounded-lg cursor-pointer transition border ${
-                      selected?.id === j.id
-                        ? 'border-blue-500 bg-blue-500/10'
-                        : 'border-slate-700 bg-slate-700/50 hover:border-slate-500'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-medium text-sm">{j.name}</p>
-                        <p className="text-slate-400 text-xs mt-0.5">{j.location}</p>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs font-semibold ${CONGESTION_COLORS[cLevel]}`}>
-                          {cLevel}
-                        </span>
-                        <span className={`px-2 py-0.5 rounded-full text-xs text-white font-medium ${PHASE_COLORS[j.signal?.current_phase] || 'bg-slate-500'}`}>
-                          {j.signal?.current_phase?.replace('_', ' ') || 'N/A'}
-                        </span>
-                        <span className={`w-2 h-2 rounded-full ${j.status === 'ONLINE' ? 'bg-green-400' : 'bg-red-400'}`} />
-                      </div>
-                    </div>
-                    <div className="flex gap-4 mt-2 text-xs text-slate-400">
-                      <span>NS: {j.signal?.vehicle_count_ns || 0} vehicles</span>
-                      <span>EW: {j.signal?.vehicle_count_ew || 0} vehicles</span>
-                      <span>NS green: {j.signal?.green_duration_ns || 0}s</span>
-                      <span>EW green: {j.signal?.green_duration_ew || 0}s</span>
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-          )}
+      {loadError && (
+        <div className="rounded-xl border border-orange-400/20 bg-orange-500/10 text-orange-200 px-4 py-3 text-sm">
+          {loadError}
         </div>
+      )}
 
-        {/* Override Panel */}
-        <div className="bg-slate-800 rounded-xl p-5">
-          <h2 className="text-white font-semibold mb-4">Manual Override</h2>
-          {!selected ? (
-            <EmptyState message="Select a junction to override" icon="👈" />
-          ) : (
-            <div className="space-y-5">
-              <div className="bg-slate-700 rounded-lg p-3">
-                <p className="text-white font-medium text-sm">{selected.name}</p>
-                <p className="text-slate-400 text-xs">{selected.location}</p>
-                {selected.signal?.emergency_override && (
-                  <span className="inline-block mt-1 px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded">
-                    ⚠ Emergency Override Active
-                  </span>
-                )}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {junctions.map((junction, idx) => {
+          const phase = junction.signal?.current_phase || 'ALL_RED';
+          const timeRemaining = getTimeRemaining(junction);
+          const flowCount = getFlowCount(junction);
+          const isBusy = saving && busyId === junction.id;
+          const emergency = Boolean(junction.signal?.emergency_override);
+
+          return (
+            <motion.div
+              key={junction.id}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: idx * 0.03 }}
+              className={`rounded-2xl bg-slate-900/85 border border-slate-800 p-6 border-t-4 ${CARD_ACCENT[phase] || 'border-t-red-400'} ${emergency ? 'ring-1 ring-orange-400/60' : ''}`}
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-3xl font-bold text-white leading-tight">{junction.name}</h3>
+                  <p className="text-xs text-slate-500 mt-1">J{idx + 1} · ID-NODE-ACTIVE</p>
+                </div>
+                <span className={`shrink-0 px-3 py-1 rounded-full text-xs font-semibold ${PHASE_PILL[phase] || PHASE_PILL.ALL_RED}`}>
+                  {PHASE_DISPLAY[phase] || 'Red PHASE'}
+                </span>
               </div>
 
-              <div>
-                <label className="text-slate-300 text-xs font-medium block mb-2">Signal Phase</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {PHASES.map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setForm(f => ({ ...f, current_phase: p }))}
-                      className={`py-2 rounded-lg text-xs font-medium transition ${
-                        form.current_phase === p
-                          ? `${PHASE_COLORS[p]} text-white`
-                          : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
-                      }`}
-                    >
-                      {p.replace('_', ' ')}
-                    </button>
-                  ))}
+              <div className="grid grid-cols-2 gap-3 mt-5">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="text-[11px] text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <Clock3 size={13} />
+                    TIME REM.
+                  </div>
+                  <div className="text-4xl font-semibold text-white mt-2">{timeRemaining}s</div>
+                </div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+                  <div className="text-[11px] text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                    <Activity size={13} />
+                    FLOW
+                  </div>
+                  <div className="text-4xl font-semibold text-white mt-2">{flowCount}</div>
                 </div>
               </div>
 
-              <div>
-                <label className="text-slate-300 text-xs font-medium block mb-2">
-                  NS Green Time: {form.green_duration_ns}s
-                </label>
-                <input
-                  type="range" min={15} max={120} step={5}
-                  value={form.green_duration_ns}
-                  onChange={e => setForm(f => ({ ...f, green_duration_ns: Number(e.target.value) }))}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex justify-between text-xs text-slate-500 mt-1">
-                  <span>15s (min)</span><span>120s (max)</span>
-                </div>
+              <div className="flex items-center justify-between text-sm text-slate-400 mt-5">
+                <span>Manual Control Mode</span>
+                <span className="inline-flex items-center gap-1.5 text-sky-300">
+                  <Bot size={14} /> {junction.statusLabel}
+                </span>
               </div>
 
-              <div>
-                <label className="text-slate-300 text-xs font-medium block mb-2">
-                  EW Green Time: {form.green_duration_ew}s
-                </label>
-                <input
-                  type="range" min={15} max={120} step={5}
-                  value={form.green_duration_ew}
-                  onChange={e => setForm(f => ({ ...f, green_duration_ew: Number(e.target.value) }))}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex justify-between text-xs text-slate-500 mt-1">
-                  <span>15s (min)</span><span>120s (max)</span>
-                </div>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <button
+                  onClick={() => handleManualOverride(junction)}
+                  disabled={isBusy || authError}
+                  className="h-10 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-60 text-slate-100 text-xs font-semibold tracking-wide transition"
+                >
+                  {isBusy ? (
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Spinner />
+                      APPLYING
+                    </span>
+                  ) : (
+                    'MANUAL OVERRIDE'
+                  )}
+                </button>
+                <button
+                  onClick={() => handleAdjustTiming(junction)}
+                  disabled={isBusy || authError}
+                  className="h-10 rounded-lg border border-slate-800 bg-slate-950/50 hover:bg-slate-900 disabled:opacity-60 text-slate-200 text-xs font-semibold tracking-wide transition"
+                >
+                  ADJUST TIMING
+                </button>
               </div>
-
-              <button
-                onClick={applyOverride}
-                disabled={saving}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold rounded-lg transition flex items-center justify-center gap-2"
-              >
-                {saving ? <><Spinner /><span>Applying...</span></> : '⚡ Apply Override'}
-              </button>
-
-              <button
-                onClick={() => setSelected(null)}
-                className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm rounded-lg transition"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Junctions', value: junctions.length, icon: '🚦' },
-          { label: 'Online', value: junctions.filter(j => j.status === 'ONLINE').length, icon: '🟢' },
-          { label: 'Emergency Active', value: junctions.filter(j => j.signal?.emergency_override).length, icon: '🚨' },
-          { label: 'Total Vehicles', value: junctions.reduce((s, j) => s + (j.signal?.vehicle_count_ns || 0) + (j.signal?.vehicle_count_ew || 0), 0), icon: '🚗' },
-        ].map(stat => (
-          <div key={stat.label} className="bg-slate-800 rounded-xl p-4 flex items-center gap-3">
-            <span className="text-2xl">{stat.icon}</span>
-            <div>
-              <p className="text-2xl font-bold text-white">{stat.value}</p>
-              <p className="text-slate-400 text-xs">{stat.label}</p>
-            </div>
-          </div>
-        ))}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

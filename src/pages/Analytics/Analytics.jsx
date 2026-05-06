@@ -3,7 +3,7 @@ import { Download, Filter, FileJson, FileText, Table as TableIcon } from 'lucide
 import { TrafficLineChart } from '../../components/charts/TrafficLineChart';
 import { MOCK_CHART_DATA } from '../../data/mockData';
 import { cn } from '../../utils/cn';
-import { api } from '../../lib/api';
+import { api, getToken, BASE } from '../../lib/api';
 import { showToast } from '../../components/ui/Toast';
 import { Spinner } from '../../components/ui/Spinner';
 
@@ -29,14 +29,32 @@ const Analytics = () => {
     const exportCSV = async () => {
         setExporting(true);
         try {
-            const token = localStorage.getItem('stms_token');
-            const res = await fetch('http://localhost:8000/analytics/export', { headers: { Authorization: `Bearer ${token}` } });
+            const token = getToken();
+            const res = await fetch(`${BASE}/analytics/export?format=csv`, { headers: { Authorization: `Bearer ${token}` } });
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = 'stms_traffic_export.csv'; a.click();
             showToast('CSV exported successfully', 'success');
         } catch { showToast('Export failed', 'error'); }
         finally { setExporting(false); }
+    };
+
+    const downloadReport = async (report) => {
+        const fmt = (report.type || 'csv').toLowerCase();
+        const token = getToken();
+        try {
+            // backend currently supports CSV/JSON exports; map unsupported types to CSV
+            const supportedFmt = (fmt === 'json' ? 'json' : 'csv');
+            const res = await fetch(`${BASE}/analytics/export?format=${supportedFmt}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (!res.ok) throw new Error('Export failed');
+            const blob = await res.blob();
+            const ext = supportedFmt === 'json' ? 'json' : 'csv';
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `${report.title.replace(/\s+/g, '_').toLowerCase()}.${ext}`; a.click();
+            showToast('Download started', 'success');
+        } catch (e) {
+            showToast(e.message || 'Export failed', 'error');
+        }
     };
 
     const reports = [
@@ -79,9 +97,32 @@ const Analytics = () => {
                             <p className="text-sm text-slate-400 uppercase">Total Vehicles</p>
                             <p className="text-2xl font-bold text-blue-400 mt-1">{summary?.total_vehicles_now || '--'}</p>
                         </div>
+
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">Avg / Junction</p>
+                            <p className="text-2xl font-bold text-slate-100 mt-1">{summary?.avg_vehicles_per_junction ?? '--'}</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">Active Incidents</p>
+                            <p className="text-2xl font-bold text-rose-400 mt-1">{summary?.active_incidents ?? '--'}</p>
+                        </div>
+
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">Active Emergency Vehicles</p>
+                            <p className="text-2xl font-bold text-emerald-300 mt-1">{summary?.active_emergency_vehicles ?? '--'}</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl">
+                            <p className="text-sm text-slate-400 uppercase">City CO2 (kg)</p>
+                            <p className="text-2xl font-bold text-yellow-300 mt-1">{co2Data?.city_total_co2_kg ? co2Data.city_total_co2_kg.toFixed(2) : (summary?.city_total_co2_kg ?? '--')}</p>
+                        </div>
+
                         <div className="p-4 bg-slate-800 rounded-xl col-span-2">
                             <p className="text-sm text-slate-400 uppercase">Busiest Junction</p>
                             <p className="text-xl font-bold text-orange-400 mt-1">{summary?.busiest_junction?.name || '--'}</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl col-span-2">
+                            <p className="text-sm text-slate-400 uppercase">System Uptime</p>
+                            <p className="text-sm font-bold text-slate-100 mt-1">{summary?.system_uptime_percent ?? '--'}%</p>
                         </div>
                     </div>
                 </div>
@@ -116,7 +157,7 @@ const Analytics = () => {
                                     </td>
                                     <td className="px-6 py-4 text-slate-500 font-mono">{report.size}</td>
                                     <td className="px-12 py-4 text-right">
-                                        <button className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all text-slate-500">
+                                        <button onClick={() => downloadReport(report)} className="p-2 hover:bg-blue-500/10 hover:text-blue-400 rounded-lg transition-all text-slate-500">
                                             <Download size={18} />
                                         </button>
                                     </td>

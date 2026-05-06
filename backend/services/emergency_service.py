@@ -7,33 +7,58 @@ from models.emergency import EmergencyCorridor, EmergencyVehicle
 from models.junction import Junction
 from models.signal import PhaseEnum
 from services.signal_service import update_signal
-from utils.geo import junctions_in_direction
+from utils.geo import junctions_in_direction, COIMBATORE_BOUNDS, within_coimbatore, get_hospital_for_junction, find_optimal_route
 
 
 async def activate_corridor(
     db: AsyncSession,
     redis_client,
     junction_id: str,
-    heading_degrees: float,
     vehicle_type: str,
     activated_by=None,
 ) -> dict | None:
     result = await db.execute(select(Junction).where(Junction.id == junction_id))
     origin = result.scalar_one_or_none()
-    if not origin:
+    if not origin or not within_coimbatore(origin.latitude, origin.longitude):
         return None
 
-    all_result = await db.execute(select(Junction))
+    nearest_hospital = get_hospital_for_junction(origin.name, origin.latitude, origin.longitude)
+
+    all_result = await db.execute(
+        select(Junction).where(
+            Junction.latitude.between(COIMBATORE_BOUNDS["lat_min"], COIMBATORE_BOUNDS["lat_max"]),
+            Junction.longitude.between(COIMBATORE_BOUNDS["lon_min"], COIMBATORE_BOUNDS["lon_max"]),
+        )
+    )
     all_junctions = [
         {"id": str(j.id), "name": j.name, "latitude": j.latitude, "longitude": j.longitude}
         for j in all_result.scalars().all()
-        if str(j.id) != str(junction_id)
+        if within_coimbatore(j.latitude, j.longitude)
     ]
 
-    corridor_junctions = junctions_in_direction(
-        all_junctions, origin.latitude, origin.longitude, heading_degrees, count=5
+    route_info = find_optimal_route(
+        all_junctions,
+        origin.latitude,
+        origin.longitude,
+        nearest_hospital["latitude"],
+        nearest_hospital["longitude"]
     )
-    corridor_ids = [j["id"] for j in corridor_junctions]
+    
+    corridor_junctions = route_info["junctions"]
+    
+    # Ensure hospital is explicitly added to the corridor route for frontend plotting
+    hospital_node = {
+        "id": nearest_hospital["id"],
+        "name": nearest_hospital["name"],
+        "latitude": nearest_hospital["latitude"],
+        "longitude": nearest_hospital["longitude"]
+    }
+    
+    if not corridor_junctions or corridor_junctions[-1].get("id") != hospital_node["id"]:
+        corridor_junctions.append(hospital_node)
+
+    # Exclude the hospital node itself when assigning signal overrides, as it has no signal
+    corridor_ids = [j["id"] for j in corridor_junctions if j["id"] != hospital_node["id"]]
 
     for jid in corridor_ids:
         await update_signal(db, redis_client, jid, PhaseEnum.EMERGENCY_OVERRIDE, 60, 60, True)
@@ -55,11 +80,12 @@ async def activate_corridor(
     corridor = EmergencyCorridor(
         emergency_vehicle_id=ev.id,
         triggering_junction_id=uuid.UUID(str(junction_id)),
-        heading_degrees=heading_degrees,
+        heading_degrees=0.0, # Removed heading degrees logic, kept for schema compatibility
+
         corridor_junction_ids=corridor_ids,
         activated_by=activated_by,
         status="ACTIVE",
-        expires_at=datetime.utcnow() + timedelta(seconds=120),
+        expires_at=datetime.utcnow() + timedelta(hours=1),
     )
     db.add(corridor)
     await db.commit()
@@ -69,9 +95,12 @@ async def activate_corridor(
         "event_id": str(corridor.id),
         "vehicle_id": vehicle_id,
         "vehicle_type": vehicle_type,
+        "destination_hospital": nearest_hospital,
         "corridor_junctions": corridor_junctions,
+        "total_distance_km": route_info["total_distance_km"],
+        "estimated_time_minutes": route_info["estimated_time_minutes"],
         "expires_at": corridor.expires_at.isoformat() + "Z",
-        "message": f"Green corridor activated for {len(corridor_junctions)} junctions",
+        "message": f"Routed to {nearest_hospital['name']} ({len(corridor_junctions)} junctions cleared)",
     }
 
 

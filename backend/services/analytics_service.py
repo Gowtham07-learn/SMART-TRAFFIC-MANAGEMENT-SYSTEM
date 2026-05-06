@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from models.junction import Junction
 from models.analytics import CO2Record
+from models.incident import IncidentReport
+from models.emergency import EmergencyVehicle
 
 IDLE_EMISSION_FACTOR = 0.000196
 IDLE_SECONDS = 30
@@ -54,7 +56,6 @@ async def calculate_co2(db: AsyncSession, redis_client) -> dict:
 async def get_summary(db: AsyncSession, redis_client) -> dict:
     result = await db.execute(select(Junction))
     junctions = result.scalars().all()
-
     total_vehicles = 0
     busiest = {"name": "None", "count": 0, "id": ""}
 
@@ -72,11 +73,41 @@ async def get_summary(db: AsyncSession, redis_client) -> dict:
         if count > busiest["count"]:
             busiest = {"name": j.name, "count": count, "id": str(j.id)}
 
+    # Active incidents
+    try:
+        inc_res = await db.execute(select(IncidentReport).where(IncidentReport.status == 'OPEN'))
+        active_incidents = len(inc_res.scalars().all())
+    except Exception:
+        active_incidents = 0
+
+    # Active emergency vehicles
+    try:
+        ev_res = await db.execute(select(EmergencyVehicle).where(EmergencyVehicle.is_active == True))
+        active_emergency = len(ev_res.scalars().all())
+    except Exception:
+        active_emergency = 0
+
+    # CO2 summary (reuse calculate_co2 for consistency)
+    try:
+        co2_summary = await calculate_co2(db, redis_client)
+        city_co2_kg = co2_summary.get('city_total_co2_kg', 0)
+        city_co2_tons = co2_summary.get('city_total_co2_tons', 0)
+        annual_projected = co2_summary.get('annual_projected_tons', 0)
+    except Exception:
+        city_co2_kg = 0
+        city_co2_tons = 0
+        annual_projected = 0
+
     return {
         "total_junctions": len(junctions),
         "total_vehicles_now": total_vehicles,
         "avg_vehicles_per_junction": round(total_vehicles / len(junctions), 1) if junctions else 0,
         "busiest_junction": busiest,
+        "active_incidents": active_incidents,
+        "active_emergency_vehicles": active_emergency,
+        "city_total_co2_kg": city_co2_kg,
+        "city_total_co2_tons": city_co2_tons,
+        "annual_projected_tons": annual_projected,
         "system_uptime_percent": 99.5,
         "calculated_at": datetime.utcnow().isoformat() + "Z"
     }

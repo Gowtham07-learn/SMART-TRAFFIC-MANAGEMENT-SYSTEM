@@ -1,7 +1,14 @@
 import asyncio
 import uuid
+import os
+import sys
 from fastapi import FastAPI, WebSocket, Query
 from fastapi.middleware.cors import CORSMiddleware
+
+BACKEND_DIR = os.path.dirname(__file__)
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 from database import engine, Base
 from app_state import init_redis, get_redis_sync
 from services.auth_service import decode_token
