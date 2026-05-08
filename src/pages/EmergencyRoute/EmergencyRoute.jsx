@@ -51,6 +51,7 @@ export default function EmergencyRoute() {
     const activeCorridor = corridors.length > 0 ? corridors[0] : null;
 
     const [routeGeometry, setRouteGeometry] = useState([]);
+    const [estimatedTime, setEstimatedTime] = useState(null);
 
     useEffect(() => {
         if (!activeCorridor) return;
@@ -67,6 +68,7 @@ export default function EmergencyRoute() {
                 if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
                     const geometry = data.routes[0].geometry.coordinates;
                     setRouteGeometry(geometry.map(coord => [coord[1], coord[0]]));
+                    setEstimatedTime(data.routes[0].duration);
                 }
             })
             .catch(console.error);
@@ -142,6 +144,11 @@ export default function EmergencyRoute() {
                         <p className="text-xs text-slate-400 mt-1">
                             Expires in {Math.floor(Math.max(0, Math.round((new Date(activeCorridor.expires_at) - Date.now()) / 1000)) / 60)}m {Math.max(0, Math.round((new Date(activeCorridor.expires_at) - Date.now()) / 1000)) % 60}s
                         </p>
+                        {estimatedTime !== null && (
+                            <p className="text-xs text-blue-400 mt-1 font-medium">
+                                ETA: {Math.ceil(estimatedTime / 60)} mins
+                            </p>
+                        )}
                     </div>
                 </div>
 

@@ -37,7 +37,7 @@ const Login = () => {
 
     const [selectedRole, setSelectedRole] = useState(ROLES.ADMIN);
     const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('test@1234');
+    const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [passwordError, setPasswordError] = useState('');
     const [error, setError] = useState('');
