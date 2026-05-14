@@ -15,11 +15,18 @@ export const hasAccess = (role, allowedRoles) => {
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(() => {
+        const token = sessionStorage.getItem('access_token');
+        if (!token) {
+            sessionStorage.removeItem('user');
+            return null;
+        }
+
         const storedUser = sessionStorage.getItem('user');
         if (storedUser) {
             try {
                 return JSON.parse(storedUser);
             } catch (e) {
+                sessionStorage.removeItem('user');
                 return null;
             }
         }

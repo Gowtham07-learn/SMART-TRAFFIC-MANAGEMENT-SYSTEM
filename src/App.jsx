@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ROLES } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import { DashboardLayout } from './components/layout/DashboardLayout';
@@ -29,7 +29,7 @@ const Placeholder = ({ name }) => (
 function App() {
   return (
     <AuthProvider>
-      <Router>
+      <Router basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/*" element={
@@ -49,6 +49,7 @@ function App() {
                 <Route path="/alerts" element={<ProtectedRoute allowedRoles={[ROLES.CITIZEN]}><Alerts /></ProtectedRoute>} />
                 <Route path="/report" element={<ProtectedRoute allowedRoles={[ROLES.CITIZEN]}><ReportIncident /></ProtectedRoute>} />
                 <Route path="/routes" element={<ProtectedRoute allowedRoles={[ROLES.CITIZEN]}><RouteRecommendations /></ProtectedRoute>} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </DashboardLayout>
           } />
