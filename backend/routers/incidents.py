@@ -11,13 +11,11 @@ from utils.response import success, error
 
 router = APIRouter(tags=['Incidents'])
 
-
-@router.get('/my')
-async def get_my_incidents(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(IncidentReport).where(IncidentReport.reported_by == current_user.id).order_by(desc(IncidentReport.timestamp)))
-    incidents = result.scalars().all()
-
-
+def _incident_dict(i, full=True):
+    d = {'id': str(i.id), 'report_id': i.report_id, 'location': i.location, 'severity': i.severity, 'status': i.status, 'timestamp': i.timestamp.isoformat()}
+    if full:
+        d.update({'ir_vehicle': i.ir_vehicle, 'location_lat': i.location_lat, 'location_lon': i.location_lon, 'node': i.node, 'description': i.description, 'is_auto_generated': i.is_auto_generated, 'resolved_at': i.resolved_at.isoformat() if i.resolved_at else None})
+    return d
 
 @router.post('/report')
 async def report_incident(body: dict, current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
@@ -37,3 +35,9 @@ async def get_all_incidents(status: str = Query(default=None), severity: str = Q
     incidents = result.scalars().all()
     return success([_incident_dict(i) for i in incidents])
 
+
+@router.get('/my')
+async def get_my_incidents(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(IncidentReport).where(IncidentReport.reported_by == current_user.id).order_by(desc(IncidentReport.timestamp)))
+    incidents = result.scalars().all()
+    return success([_incident_dict(i, full=False) for i in incidents])
