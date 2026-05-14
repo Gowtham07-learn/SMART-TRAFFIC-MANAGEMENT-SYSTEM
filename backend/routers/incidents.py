@@ -35,6 +35,7 @@ async def get_all_incidents(status: str = Query(default=None), severity: str = Q
     incidents = result.scalars().all()
     return success([_incident_dict(i) for i in incidents])
 
+
 @router.get('/my')
 async def get_my_incidents(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(IncidentReport).where(IncidentReport.reported_by == current_user.id).order_by(desc(IncidentReport.timestamp)))
